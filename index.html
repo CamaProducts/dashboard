@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cama dispatch</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --blue: #1B4F93;
+    --blue-deep: #10325F;
+    --lime: #C3D72F;
+    --paper: #F3F5F8;
+    --ink: #14243F;
+    --muted: #5B6B82;
+    --rule: #D5DCE6;
+    --alert: #C62828;
+    --face: "Bahnschrift", "DIN Alternate", "Arial Narrow", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--paper); color: var(--ink); font-family: var(--face); overflow: hidden; cursor: none; }
+  body { display: grid; grid-template-rows: auto 1fr auto; }
+
+  header {
+    display: flex; align-items: center; gap: 3vw;
+    background: #fff; border-bottom: .7vh solid var(--lime);
+    padding: 0 2.5vw; height: 13vh;
+  }
+  header img { height: 86%; width: auto; display: block; }
+  header h1 { font-size: 5vh; font-weight: 600; color: var(--blue-deep); letter-spacing: .02em; flex: 1; }
+  .clock { text-align: right; line-height: 1; }
+  .clock .time { font-size: 6.2vh; font-weight: 700; color: var(--blue-deep); font-variant-numeric: tabular-nums; }
+  .clock .date { font-size: 2.4vh; color: var(--muted); margin-top: .6vh; }
+
+  main { display: grid; grid-template-columns: 30fr 30fr 40fr; min-height: 0; }
+
+  .tally { display: flex; flex-direction: column; justify-content: flex-start; padding: 5vh 2.5vw 3vh; gap: 4vh; min-width: 0; }
+  .tally h2 { font-size: 3.4vh; font-weight: 600; }
+  .tally .big { font-size: 22vh; font-weight: 700; line-height: .85; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .tally .unit { font-size: 3vh; font-weight: 400; margin-top: 1.2vh; }
+  .tally .mid { font-size: 9vh; font-weight: 600; line-height: .9; font-variant-numeric: tabular-nums; }
+
+  .waiting { background: var(--blue); color: #fff; }
+  .waiting .unit, .waiting h2 { color: #D9E4F3; }
+  .invoiced { background: #fff; border-right: 1px solid var(--rule); }
+  .invoiced .unit, .invoiced h2 { color: var(--muted); }
+  .backorders { border-left: 1vh solid var(--lime); padding-left: 1.2vw; }
+  .backorders .num { font-size: 5.5vh; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .backorders .unit { margin-top: .2vh; font-size: 2.4vh; }
+
+  .slots { padding: 5vh 2.5vw 2vh; display: flex; flex-direction: column; min-height: 0; }
+  .slots-head { margin-bottom: 1.5vh; }
+  .slots-head h2 { font-size: 3.4vh; font-weight: 600; }
+  .key { display: flex; gap: 1.6vw; font-size: 2.2vh; color: var(--muted); margin-top: 1vh; white-space: nowrap; }
+  .key span::before { content: ""; display: inline-block; width: 1.6vh; height: 1.6vh; margin-right: .5vw; vertical-align: -.2vh; background: var(--blue); }
+  .key span.k-back::before { background: var(--lime); }
+  ol { list-style: none; flex: 1; display: grid; grid-auto-rows: 1fr; gap: .6vh; min-height: 0; }
+  li { display: grid; grid-template-columns: 7vw 1fr 5vw; align-items: center; gap: 1vw; font-size: 3vh; padding: 0 .6vw; }
+  li .t { color: var(--muted); font-variant-numeric: tabular-nums; }
+  li .bar { height: 62%; display: flex; background: #E6EBF2; }
+  li .bar i { display: block; height: 100%; background: var(--blue); }
+  li .bar i.b { background: var(--lime); }
+  li .n { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  li.now { background: #fff; box-shadow: inset .5vh 0 0 var(--blue-deep); }
+  li.now .t { color: var(--ink); font-weight: 700; }
+  li.future .n { color: transparent; }
+  .note { font-size: 1.9vh; color: var(--muted); margin-top: 1vh; min-height: 2.2vh; }
+
+  footer { font-size: 2vh; color: var(--muted); padding: 1vh 2.5vw; background: #fff; border-top: 1px solid var(--rule); display: flex; justify-content: space-between; }
+  footer.bad { background: var(--alert); color: #fff; font-size: 3vh; font-weight: 600; padding: 1.6vh 2.5vw; }
+  body.stale .big, body.stale .mid, body.stale .num { opacity: .35; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .tally .big { transition: color .4s; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <img src="cama-logo.png" alt="Cama">
+  <h1>Dispatch today</h1>
+  <div class="clock"><div class="time" id="time">--:--</div><div class="date" id="date"></div></div>
+</header>
+
+<main>
+  <section class="tally waiting">
+    <h2 id="waitingTitle">Waiting to be processed</h2>
+    <div><div class="big" id="wOrders">-</div><div class="unit">orders</div></div>
+    <div><div class="mid" id="wLines">-</div><div class="unit">lines</div></div>
+  </section>
+
+  <section class="tally invoiced">
+    <h2>Invoiced today</h2>
+    <div><div class="big" id="iInv">-</div><div class="unit">invoices</div></div>
+    <div><div class="mid" id="iLines">-</div><div class="unit">lines</div></div>
+    <div class="backorders">
+      <div class="num" id="bInv">-</div>
+      <div class="unit" id="bText">backorder invoices</div>
+    </div>
+  </section>
+
+  <section class="slots">
+    <div class="slots-head">
+      <h2>Invoices each half hour</h2>
+      <div class="key"><span>Today’s orders</span><span class="k-back">Backorders</span></div>
+    </div>
+    <ol id="slots"></ol>
+    <div class="note" id="note"></div>
+  </section>
+</main>
+
+<footer id="footer"><span id="status">Starting…</span><span id="checks"></span></footer>
+
+<script>
+/* ================================================================
+   SETTINGS: paste your two Supabase values between the quotes.
+   Both are safe to have in a web page. (Project Settings > API)
+   The private view key goes on the END OF THE ADDRESS, not here.
+   ================================================================ */
+var SUPABASE_URL = 'https://niszagipuqtndyoiduiq.supabase.co';
+var SUPABASE_KEY = 'sb_publishable_2MUY-oy6nTkFtXrX6_wwLA_dPTTQ2bJ';
+</script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var nf = new Intl.NumberFormat('en-NZ');
+  var started = Date.now();
+  var last = null, updatedAt = null, ageSecs = 0;
+  var conn = 'wait';            // wait | ok | nodata | offline | auth | config
+  var offlineSince = null, busy = false;
+
+  // The view key comes from the end of the address (#k=...) and is remembered on this device
+  var viewKey = '';
+  try {
+    var m = /[#&]k=([A-Za-z0-9]+)/.exec(location.hash);
+    if (m) { viewKey = m[1]; try { localStorage.setItem('camaDashKey', viewKey); } catch (e) {} }
+    else { try { viewKey = localStorage.getItem('camaDashKey') || ''; } catch (e) {} }
+  } catch (e) {}
+
+  function parse(s) { return s ? new Date(String(s).replace(' ', 'T')) : null; }
+  function hm(d) { return d && !isNaN(d) ? d.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false }) : ''; }
+
+  function tickClock() {
+    var now = new Date();
+    $('time').textContent = hm(now);
+    $('date').textContent = now.toLocaleDateString('en-NZ', { weekday: 'long', day: 'numeric', month: 'long' });
+  }
+
+  function setBar(bad, left, right) {
+    $('footer').className = bad ? 'bad' : '';
+    $('status').textContent = left;
+    $('checks').textContent = right || '';
+    document.body.classList.toggle('stale', !!(bad && last));
+  }
+
+  function render() {
+    var d = last, now = new Date();
+
+    if (conn === 'config')  { setBar(true, 'Set the Supabase address and key at the top of index.html.'); return; }
+    if (conn === 'auth')    { setBar(true, 'This address is missing its view key, or the key is wrong. Use the full address that ends with #k=…'); return; }
+    if (!d) {
+      setBar(true, conn === 'nodata' ? 'Connected, but no numbers have been sent yet. Is the script running on the office PC?'
+               : conn === 'offline' ? 'Can’t reach the internet.' : 'Waiting for data…');
+      return;
+    }
+
+    var w = d.waiting || {}, inv = d.invoiced || {};
+    $('waitingTitle').textContent = d.waitingSince ? 'Waiting since ' + d.waitingSince : 'Waiting to be processed';
+    $('wOrders').textContent = w.orders == null ? '-' : nf.format(w.orders);
+    $('wLines').textContent  = w.lines  == null ? '-' : nf.format(w.lines);
+    $('iInv').textContent    = nf.format(inv.invoices || 0);
+    $('iLines').textContent  = nf.format(inv.lines || 0);
+    $('bInv').textContent    = nf.format(inv.backInvoices || 0);
+    $('bText').textContent   = (inv.backInvoices === 1 ? 'backorder invoice, ' : 'backorder invoices, ') + nf.format(inv.backLines || 0) + ' lines';
+
+    // Half-hour rows
+    var slots = d.slots || [], max = 1, mins = d.slotMinutes || 30, html = '';
+    slots.forEach(function (s) { max = Math.max(max, s.orders + s.backorders); });
+    slots.forEach(function (s) {
+      var parts = s.label.split(':'), start = new Date(now);
+      start.setHours(+parts[0], +parts[1], 0, 0);
+      var end = new Date(start.getTime() + mins * 60000);
+      var cls = now >= start && now < end ? 'now' : (now < start ? 'future' : '');
+      var total = s.orders + s.backorders;
+      html += '<li class="' + cls + '"><span class="t">' + s.label + '</span>' +
+              '<span class="bar"><i style="width:' + (s.orders / max * 100) + '%"></i>' +
+              '<i class="b" style="width:' + (s.backorders / max * 100) + '%"></i></span>' +
+              '<span class="n">' + total + '</span></li>';
+    });
+    $('slots').innerHTML = html;
+
+    var notes = [];
+    if (inv.untimed > 0) notes.push(inv.untimed + (inv.untimed === 1 ? ' invoice was' : ' invoices were') + ' raised before the script started today, so ' + (inv.untimed === 1 ? 'it isn’t' : 'they aren’t') + ' in this chart.');
+    if (d.demo) notes.push('Demo numbers, not from EXO.');
+    $('note').textContent = notes.join(' ');
+
+    // Status line, worst problem first
+    var staleAfter = Math.max(150, (d.ordersEvery || 30) * 5);
+    if (conn === 'offline') {
+      setBar(true, 'Can’t reach the internet since ' + hm(offlineSince) + '. Showing the last numbers it had.');
+    } else if (ageSecs > staleAfter) {
+      setBar(true, 'Not updated since ' + hm(updatedAt) + '. Check the office PC is on and the dashboard script is running.');
+    } else if (d.error) {
+      setBar(true, 'Can’t reach EXO since ' + hm(parse(d.errorSince)) + '. Showing the last numbers it had.');
+    } else {
+      setBar(false, 'Orders updated ' + hm(parse(d.waitingAt)),
+             d.invoicesAt ? 'Invoices checked ' + hm(parse(d.invoicesAt)) + ', every ' + (d.invoicesEvery || 5) + ' minutes' : '');
+    }
+  }
+
+  function headers() {
+    var h = { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json' };
+    // Old-style (JWT) keys also go in Authorization; new sb_publishable_ keys must not
+    if (/^eyJ/.test(SUPABASE_KEY)) h['Authorization'] = 'Bearer ' + SUPABASE_KEY;
+    return h;
+  }
+
+  function load() {
+    if (busy) return;
+    if (/YOUR-/.test(SUPABASE_URL + SUPABASE_KEY)) { conn = 'config'; render(); return; }
+    if (!viewKey) { conn = 'auth'; render(); return; }
+    busy = true;
+    var ctl = window.AbortController ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 15000);
+    fetch(SUPABASE_URL.replace(/\/$/, '') + '/rest/v1/rpc/dash_get', {
+      method: 'POST', headers: headers(), body: JSON.stringify({ p_key: viewKey }),
+      cache: 'no-store', signal: ctl ? ctl.signal : undefined
+    })
+    .then(function (r) {
+      if (r.status === 401 || r.status === 403) { conn = 'auth'; return null; }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function (j) {
+      if (j) {
+        offlineSince = null;
+        if (!j.payload) { last = null; conn = 'nodata'; }
+        else {
+          conn = 'ok'; last = j.payload;
+          updatedAt = new Date(j.updated_at);
+          ageSecs = (new Date(j.server_now) - updatedAt) / 1000;   // both from Supabase's clock
+        }
+      }
+      render();
+    })
+    .catch(function () { if (!offlineSince) offlineSince = new Date(); conn = 'offline'; render(); })
+    .then(function () { clearTimeout(timer); busy = false; });
+  }
+
+  tickClock(); load();
+  setInterval(tickClock, 1000);
+  setInterval(load, 10000);
+  setInterval(render, 30000);
+
+  // Pick up a newer version of this page every few hours, but only if the page can be fetched
+  setInterval(function () {
+    if (Date.now() - started < 3 * 3600 * 1000) return;
+    fetch(location.href.split('#')[0], { cache: 'no-store' }).then(function (r) { if (r.ok) location.reload(); }).catch(function () {});
+  }, 60000);
+})();
+</script>
+</body>
+</html>
